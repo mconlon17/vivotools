@@ -14,10 +14,11 @@ __version__     = "0.1"
 
 import vivotools as vt
 from datetime import datetime
+import json
 
 print datetime.now(),"Start"
 publications = [
-    "http://vivo.ufl.edu/individual/n4160403698",
+    "http://vivo.ufl.edu/individual/n2592711416",
     "http://vivo.ufl.edu/individual/n49408",
     "http://vivo.ufl.edu/individual/n5988333327",
     "http://vivo.ufl.edu/individual/n697590874",
@@ -29,5 +30,7 @@ publications = [
     "http://vivo.ufl.edu/individual/n5755807043"
     ]
 for publication in publications:
-    print "\n",vt.get_publication(publication)
+    pub = vt.get_publication(publication, get_authors=True)
+    print "\n",json.dumps(pub, indent=4)
+    print vt.string_from_document(pub)
 print datetime.now(),"Finish"

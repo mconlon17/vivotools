@@ -1,61 +1,13 @@
 #!/usr/bin/env/python
-"""vivotools.py -- A library of useful things for working with VIVO
+""" vivotools.py -- A library of useful things for working with VIVO
 
-    1.1     2013-03-02 MC
-            Added assert_data_property to generate RDF for asserting that an
-            entity have a named data property value
-            Added update_data property to generate addtion and subtraction RDF
-            based on five case logic to update a VIVO data property value with
-            a source data property value
-            Added hr_abbrev_to_words to fix position and working titles
-    1.2     2013-06-11 MC
-            Add get_position to return a position object from a position uri
-            Add position capability to get_person
-            Add repair_phone_number to return IT standard phone numbers
-    1.3     2013-07-23 MC
-            Fixed make_datetime_rdf to provide datetime string values with
-            zeroed time components for datetime precision asserted as
-            yearMonthDay
-    1.4     2013-08-07 MC
-            Changed delimiter in read_csv to "|" was "!"
-    1.41    2013-08-11 MC
-            support missing grant start and end dates
-    1.42    2013-08-22 MC
-            added Skip=True to read.csv to skip rows without the number of
-            values in the header.  skip=False will throw an exception on
-            first such occurance
-    1.43    2013-09-02 MC
-            get_person now returns preferred_title.
-            get_person now returns person['home_dept_uri'] if exists
-    1.44    2013-09-04 MC
-            Added version variable
-    1.45    2013-09-17 MC
-            Added debug parameter to vivo_sparql_query to show baseURL and query
-    1.46    2013-11-29 MC
-            Remove print statements from update_data_property and
-            update_resource_property
-            Added get_references to return references to a URI
-            Added remove_uri to remove all triples citing the URI
-            Added get_webpage to return a webpage object from a webpage uri
-            Enhancements to get_publication to return pubmed values
-            Removed function _values_from_vivo.  Use get_publication
-            Renamed get_pubmed_values_from_pubmed to simply
-            get_pubmed_values
-    1.47    2013-12-10 MC
-            Added additional ttributes to get_pubmed and get_publication
-    1.48    2013-12-14 MC
-            Add retry code to get_pubmed to handle Entrez non-response
-    1.49    2014-01-02 MC
-            Numerous upgrades to get functions to support biosketches
-    1.50    2014-01-11 MC
-            Replace all tets for None with is None and is not None
-            VIVO URI always appear in rdf:resource assertions
+    See CHANGELOG for a running account of the changes to vivotools
 """
 
 __author__ = "Michael Conlon"
 __copyright__ = "Copyright 2014, University of Florida"
 __license__ = "BSD 3-Clause license"
-__version__ = "1.50"
+__version__ = "1.59"
 
 concept_dictionary = {}
 
@@ -285,30 +237,31 @@ def hr_abbrev_to_words(s):
     return t[:-1] # Take off the trailing space
 
 def assert_data_property(uri, data_property, value):
-    from xml.sax.saxutils import escape
     """
-    Given a uri and a data_property name, and a value, generate rdf to assert
-    the uri has the value of the data property
+    Given a uri, a data_property name, and a value, generate rdf to assert
+    the uri has the value of the data property. Value can be a string or a
+    dictionary.  If dictionary, sample usage is three elements as shown:
+
+    value = { 'value': val, 'xml:lang': 'en-US',
+        'dataype' : 'http://www.w3.org/2001/XMLSchema#string'}
 
     Note:
     This function does not check that the data property name is valid
     """
-    data_property_template = tempita.Template(
-    """
-    <rdf:Description rdf:about="{{uri}}">
-        <{{data_property}}>{{value}}</{{data_property}}>
-    </rdf:Description>
-    """)
-
-    # That's one nasty kludge.  Need a smart escape
-
-    if value.find('&amp;') < 0:
-        val = escape(value)
+    from xml.sax.saxutils import escape
+    if isinstance(value, dict):
+        val = escape(value['value'])
     else:
-        val = value
+        val = escape(value)
 
-    rdf = data_property_template.substitute(uri=uri, \
-        data_property=data_property, value=val)
+    rdf = '    <rdf:Description rdf:about="' + uri + '">'
+    rdf = rdf + '\n        <' + data_property
+    if isinstance(value, dict) and 'xml:lang' in value:
+        rdf = rdf + ' xml:lang="' + value['xml:lang'] + '"'
+    if isinstance(value, dict) and 'datatype' in value:
+        rdf = rdf + ' datatype="' + value['datatype'] + '"'
+    rdf = rdf + '>' + val + '</' + data_property + '>'
+    rdf = rdf + '\n    </rdf:Description>\n'
     return rdf
 
 def assert_resource_property(uri, resource_property, resource_uri):
@@ -323,11 +276,10 @@ def assert_resource_property(uri, resource_property, resource_uri):
     a resource. Example: homeDept and homeDeptFor
     """
     resource_property_template = tempita.Template(
-    """
-    <rdf:Description rdf:about="{{uri}}">
+    """    <rdf:Description rdf:about="{{uri}}">
         <{{resource_property}} rdf:resource="{{resource_uri}}"/>
     </rdf:Description>
-    """)
+""")
     rdf = resource_property_template.substitute(uri=uri, \
         resource_property=resource_property, resource_uri=resource_uri)
     return rdf
@@ -337,7 +289,8 @@ def update_data_property(uri, data_property, vivo_value, source_value):
     Given the URI of an entity, the name of a data_proprty, the current
     vivo value for the data_property and the source (correct) value for
     the property, use five case logic to generate appropriate subtraction
-    and addtion rdf to update the data_property
+    and addition rdf to update the data_property. Support values that may
+    be dictionaries containing xml:lang and/or dataype assertions
 
     Note:   we could have shortened the if statements, but they might not have
             been as clear
@@ -350,13 +303,30 @@ def update_data_property(uri, data_property, vivo_value, source_value):
         ardf = assert_data_property(uri, data_property, source_value)
     elif vivo_value is not None and source_value is None:
         srdf = assert_data_property(uri, data_property, vivo_value)
-    elif vivo_value is not None and source_value is not None and \
-        vivo_value == source_value:
-        pass
-    elif vivo_value is not None and source_value is not None and \
-        vivo_value != source_value:
-        srdf = assert_data_property(uri, data_property, vivo_value)
-        ardf = assert_data_property(uri, data_property, source_value)
+    elif vivo_value is not None and source_value is not None:
+        if isinstance(vivo_value,dict) and isinstance(source_value,dict):
+            if len(set(vivo_value.keys()) - set(source_value.keys())) != 0:
+                equal_values = False
+            else:
+                equal_values = True
+                for key in vivo_value.keys():
+                    if vivo_value[key] != source_value[key]:
+                        equal_values = False
+                        continue
+        elif isinstance(vivo_value,dict):
+            equal_values = vivo_value['value'] == source_value and\
+                'xml:lang' not in vivo_value and 'datatype' not in vivo_value
+        elif isinstance(source_value, dict):
+            equal_values = vivo_value == source_value['value'] and\
+                'xml:lang' not in source_value and 'datatype'\
+                not in source_value
+        else:
+            equal_values = vivo_value == source_value
+        if equal_values:
+            pass
+        else:
+            srdf = assert_data_property(uri, data_property, vivo_value)
+            ardf = assert_data_property(uri, data_property, source_value)
     return [ardf, srdf]
 
 def update_resource_property(uri, resource_property, vivo_value, source_value):
@@ -386,6 +356,139 @@ def update_resource_property(uri, resource_property, vivo_value, source_value):
         ardf = assert_resource_property(uri, resource_property, source_value)
     return [ardf, srdf]
 
+def translate_predicate(p):
+    """
+    Given a full URI predicate, return a tagged predicate.
+    So, for example, given
+
+        http://www.w3.org/1999/02/22-rdf-syntax-ns#type
+
+    return
+
+        rdf:type
+    """
+    ns = {
+    "http://www.w3.org/1999/02/22-rdf-syntax-ns#": "rdf:",
+    "http://vivoweb.org/ontology/core#":"vivo:",
+    "http://vivo.ufl.edu/ontology/vivo-ufl/":"ufVivo:",
+    "http://www.w3.org/2000/01/rdf-schema#":"rdfs:",
+    "http://xmlns.com/foaf/0.1/":"foaf:",
+    "http://purl.org/ontology/bibo/":"bibo:",
+    "http://purl.org/dc/elements/1.1/":"dcelem:",
+    "http://purl.org/dc/terms/":"dcterms:",
+    "http://www.w3.org/2001/XMLSchema#":"xsd:",
+    "http://www.w3.org/2002/07/owl#":"owl:",
+    "http://www.w3.org/2003/11/swrl#":"swrl:",
+    "http://www.w3.org/2003/11/swrlb#":"swrlb:",
+    "http://vitro.mannlib.cornell.edu/ns/vitro/0.7#":"vitro1:",
+    "http://purl.org/spar/c4o/":"c40:",
+    "http://purl.org/NET/c4dm/event.owl#":"event:",
+    "http://purl.org/spar/fabio/":"fabio:",
+    "http://aims.fao.org/aos/geopolitical.owl#":"geo:",
+    "http://vivoweb.org/ontology/provenance-support#":"pvs:",
+    "http://purl.obolibrary.org/obo/":"ero:",
+    "http://vivoweb.org/ontology/scientific-research#":"scires:",
+    "http://www.w3.org/2004/02/skos/core#":"skos:",
+    "http://vitro.mannlib.cornell.edu/ns/vitro/public#":"vitro2:"
+    }
+    for uri, tag in ns.items():
+        if uri in p:
+            newp = p.replace(uri, tag)
+            return newp
+    return Nonetranslate_predicate
+
+def untag_predicate(p):
+    """
+    Given a tagged predicate, return a full predicate.
+    So, for example, given
+
+    rdf:type
+
+    return
+
+        http://www.w3.org/1999/02/22-rdf-syntax-ns#type
+    """
+    ns = {
+    "rdf:":"http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+    "vivo:":"http://vivoweb.org/ontology/core#",
+    "ufVivo:":"http://vivo.ufl.edu/ontology/vivo-ufl/",
+    "rdfs:":"http://www.w3.org/2000/01/rdf-schema#",
+    "foaf:":"http://xmlns.com/foaf/0.1/",
+    "bibo:":"http://purl.org/ontology/bibo/",
+    "dcelem:":"http://purl.org/dc/elements/1.1/",
+    "dcterms:":"http://purl.org/dc/terms/",
+    "xsd:":"http://www.w3.org/2001/XMLSchema#",
+    "owl:":"http://www.w3.org/2002/07/owl#",
+    "swrl:":"http://www.w3.org/2003/11/swrl#",
+    "swrlb:":"http://www.w3.org/2003/11/swrlb#",
+    "vitro1:":"http://vitro.mannlib.cornell.edu/ns/vitro/0.7#",
+    "c40:":"http://purl.org/spar/c4o/",
+    "event:":"http://purl.org/NET/c4dm/event.owl#",
+    "fabio:":"http://purl.org/spar/fabio/",
+    "geo:":"http://aims.fao.org/aos/geopolitical.owl#",
+    "pvs:":"http://vivoweb.org/ontology/provenance-support#",
+    "ero:":"http://purl.obolibrary.org/obo/",
+    "scires:":"http://vivoweb.org/ontology/scientific-research#",
+    "skos:":"http://www.w3.org/2004/02/skos/core#",
+    "vitro2:":"http://vitro.mannlib.cornell.edu/ns/vitro/public#"
+    }
+    tag = p[0:p.find(':')+1]
+    if tag in ns:
+        predicate = p.replace(tag, ns[tag])
+        return predicate
+    else:
+        return None
+
+def merge_uri(from_uri, to_uri):
+    """
+    Given a from URI and to URI, generate the add and subtract RDF to merge
+    all the triples from the from_uri to the to_uri.
+
+    Merge does not allow values of from_uri to be applied to to_uri if the
+    predicate is single valued.  This could result in loss of information.
+    """
+
+    single_valued_predicates = [
+        "rdfs:label",
+        "ufVivo:ufid",
+        "foaf:firstName",
+        "foaf:lastName",
+        "bibo:middlename"
+        ]
+    srdf = ""
+    ardf = ""
+    if from_uri == to_uri:
+        return [ardf, srdf]
+
+    # merge triples
+
+    triples = get_triples(from_uri)["results"]["bindings"]
+    for triple in triples:
+        p = translate_predicate(triple["p"]["value"])
+        o = triple["o"]
+        if o["type"] == "uri":
+            sub = assert_resource_property(from_uri, p, o["value"])
+            if p not in single_valued_predicates:
+                add = assert_resource_property(to_uri, p, o["value"])
+        else:
+            sub = assert_data_property(from_uri, p, o)
+            if p not in single_valued_predicates:
+                add = assert_data_property(to_uri, p, o)
+        srdf = srdf + sub
+        ardf = ardf + add
+
+    # merge references
+
+    triples = get_references(from_uri)["results"]["bindings"]
+    for triple in triples:
+        s = triple["s"]["value"]
+        p = translate_predicate(triple["p"]["value"])
+        [add, sub] = update_resource_property(s, p, from_uri, to_uri)
+        srdf = srdf + sub
+        ardf = ardf + add
+
+    return [ardf, srdf]
+
 def remove_uri(uri):
     """
     Given a URI, generate subtraction URI to remove all triples containing
@@ -397,10 +500,10 @@ def remove_uri(uri):
 
     triples = get_triples(uri)["results"]["bindings"]
     for triple in triples:
-        p = triple["p"]["value"]
-        o = triple["o"]["value"]
-        if o[:7] == "http://" and p[-3:] != "URI" and p[-4:] != "Text":
-            [add, sub] = update_resource_property(uri, p, o, None)
+        p = translate_predicate(triple["p"]["value"])
+        o = triple["o"]
+        if o["type"] == "uri":
+            [add, sub] = update_resource_property(uri, p, o["value"], None)
         else:
             [add, sub] = update_data_property(uri, p, o, None)
         srdf = srdf + sub
@@ -410,7 +513,7 @@ def remove_uri(uri):
     triples = get_references(uri)["results"]["bindings"]
     for triple in triples:
         s = triple["s"]["value"]
-        p = triple["p"]["value"]
+        p = translate_predicate(triple["p"]["value"])
         [add, sub] = update_resource_property(s, p, uri, None)
         srdf = srdf + sub
     return srdf
@@ -435,6 +538,7 @@ def make_datetime_rdf(datetime, precision="yearMonthDay"):
     datetime_template = tempita.Template(
     """
     <rdf:Description rdf:about="{{datetime_uri}}">
+        <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Thing"/>
         <rdf:type rdf:resource="http://vivoweb.org/ontology/core#DateTimeValue"/>
         <core:dateTimePrecision rdf:resource="http://vivoweb.org/ontology/core#{{precision}}Precision"/>
         <core:dateTime>{{datetime}}</core:dateTime>
@@ -469,6 +573,7 @@ def make_dt_interval_rdf(start_uri, end_uri):
     """
     dt_interval_template = tempita.Template("""
     <rdf:Description rdf:about="{{interval_uri}}">
+        <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Thing"/>
         <rdf:type rdf:resource="http://vivoweb.org/ontology/core#DateTimeInterval"/>
         {{if start_uri != "" and start_uri is not None}}
             <core:start rdf:resource="{{start_uri}}"/>
@@ -488,6 +593,34 @@ def make_dt_interval_rdf(start_uri, end_uri):
                                               start_uri=start_uri,
                                               end_uri=end_uri)
     return [rdf, interval_uri]
+
+class UnicodeCsvReader(object):
+    """
+    From http://stackoverflow.com/questions/1846135/python-csv-
+    library-with-unicode-utf-8-support-that-just-works. Added errors='ignore'
+    to handle cases when the input file mispresents itself as utf-8.
+    """
+    def __init__(self, f, encoding="utf-8", **kwargs):
+        self.csv_reader = csv.reader(f, **kwargs)
+        self.encoding = encoding
+
+    def __iter__(self):
+        return self
+
+    def next(self):
+        # read and split the csv row into fields
+        row = self.csv_reader.next() 
+        # now decode
+        return [unicode(cell, self.encoding, errors='ignore') for cell in row]
+
+    @property
+    def line_num(self):
+        return self.csv_reader.line_num
+
+class UnicodeDictReader(csv.DictReader):
+    def __init__(self, f, encoding="utf-8", fieldnames=None, **kwds):
+        csv.DictReader.__init__(self, f, fieldnames=fieldnames, **kwds)
+        self.reader = UnicodeCsvReader(f, encoding=encoding, **kwds)
 
 def read_csv(filename, skip=True):
     """
@@ -519,12 +652,11 @@ def read_csv(filename, skip=True):
     heading = []
     row_number = 0
     data = {}
-    csvReader = csv.reader(open(filename, 'rb'), delimiter="|")
-    for row in csvReader:
+    for row in UnicodeCsvReader(open(filename, 'rb'), delimiter="|"):
         i = 0
         for r in row:
             # remove white space fore and aft
-            row[i] = r.strip(string.whitespace+'\xef\xbb\xbf')
+            row[i] = r.strip(string.whitespace)
             if row[i] == 'NULL' or row[i] == 'None':
                 row[i] = ''
             i = i + 1
@@ -587,7 +719,7 @@ def get_pmid_from_doi(doi, email='mconlon@ufl.edu', tool='PythonQuery',
             time.sleep(sleep_seconds) # increase the wait time with each retry
 
 
-def get_pubmed_values(doi, debug=False):
+def get_pubmed_values(doi, pmid= None, debug=False):
     """
     Given the doi of a paper, return the current values (if any) for PMID,
     PMCID, Grants Cited, abstract, keywords, nihmsid, and Full_text_uri of
@@ -600,9 +732,10 @@ def get_pubmed_values(doi, debug=False):
     values = {}
     grants_cited = []
     keyword_list = []
-    pmid = get_pmid_from_doi(doi)
     if pmid is None:
-        return {}
+        pmid = get_pmid_from_doi(doi)
+        if pmid is None:
+            return {}
     else:
         values['pmid'] = pmid
 
@@ -676,7 +809,8 @@ def rdf_header():
     Note:  This function should be updated for each new release of VIVO and to
         include local ontologies and extensions.
     """
-    rdf_header = """<rdf:RDF
+    rdf_header = """<?xml version="1.0" encoding="utf-8"?>
+<rdf:RDF
     xmlns:rdf     = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
     xmlns:rdfs    = "http://www.w3.org/2000/01/rdf-schema#"
     xmlns:xsd     = "http://www.w3.org/2001/XMLSchema#"
@@ -699,7 +833,8 @@ def rdf_header():
     xmlns:ufVivo  = "http://vivo.ufl.edu/ontology/vivo-ufl/"
     xmlns:vitro2  = "http://vitro.mannlib.cornell.edu/ns/vitro/public#"
     xmlns:core    = "http://vivoweb.org/ontology/core#"
-    xmlns:vivo    = "http://vivoweb.org/ontology/core#">"""
+    xmlns:vivo    = "http://vivoweb.org/ontology/core#">
+"""
     return rdf_header
 
 def rdf_footer():
@@ -707,7 +842,9 @@ def rdf_footer():
     Return a text string suitable for edning an RDF statement to add or
     remoe RDF/XML to VIVO
     """
-    rdf_footer = """</rdf:RDF>"""
+    rdf_footer = """
+</rdf:RDF>
+"""
     return rdf_footer
 
 def make_rdf_uri(uri):
@@ -745,6 +882,21 @@ def get_triples(uri):
     result = vivo_sparql_query(query)
     return result
 
+def get_types(uri):
+    """
+    Given a VIVO URI, return a list of its types
+    """
+    types = []
+    triples = get_triples(uri)
+    if 'results' in triples and 'bindings' in triples['results']:
+        rows = triples['results']['bindings']
+        for row in rows:
+            p = row['p']['value']
+            o = row['o']['value']
+            if p == "http://www.w3.org/1999/02/22-rdf-syntax-ns#type":
+                types.append(o)
+    return types
+
 def get_references(uri):
     """
     Given a VIVO uri, return all the triples that have the given uri as an
@@ -762,7 +914,7 @@ def get_references(uri):
 def get_vivo_value(uri, predicate):
     """
     Given a VIVO URI, and a predicate, get a value for the rpedicate.  Assumes
-    the result is single valued.
+    the result is a single valued string.
 
     Notes:
     --  if the there are mulitple values that meet the criteria, the first one
@@ -783,6 +935,63 @@ def get_vivo_value(uri, predicate):
         b = result["results"]["bindings"][0]
         o = b['o']['value']
         return o
+    except:
+        return None
+
+def get_value(uri, predicate):
+    """
+    Given a VIVO URI, and a predicate, get a value for the rpedicate.  Assumes
+    the result is single valued.  The result is a dictionary returned by the
+    query.  This enables lang and datatype processing.
+
+    Notes:
+    --  if the there are mulitple values that meet the criteria, the first one
+        is returned
+    --  if no values meet the criteria, None is returned
+    --  this function is very inefficient, making a SPARQL query for every
+        value. Use only when strictly needed!
+    """
+    query = tempita.Template("""
+    SELECT ?o WHERE
+    {
+    <{{uri}}> {{predicate}} ?o .
+    }
+    """)
+    query = query.substitute(uri=uri, predicate=predicate)
+    result = vivo_sparql_query(query)
+    try:
+        b = result["results"]["bindings"][0]
+        o = b['o']
+        return o
+    except:
+        return None
+
+def find_vivo_uri(predicate, value):
+    """
+    Given a VIVO predicate, and a value, return the first uri in VIVO that
+    has that value for the predicate.  Useful for finding URI from values
+    of functional properties and key values.
+
+    Notes:
+    --  if the there are mulitple uris that meet the criteria, the first one
+        is returned
+    --  if no values meet the criteria, None is returned
+    --  this function is very inefficient, making a SPARQL query for every
+        value. Use only when strictly needed!
+    """
+    query = tempita.Template("""
+    SELECT ?uri WHERE
+    {
+    ?uri {{predicate}} "{{value}}" .
+    }
+    LIMIT 1
+    """)
+    query = query.substitute(predicate=predicate,value=value)
+    result = vivo_sparql_query(query)
+    try:
+        b = result["results"]["bindings"][0]
+        uri = b['uri']['value']
+        return uri
     except:
         return None
 
@@ -1175,13 +1384,11 @@ def get_position(position_uri):
         i = i + 1
     return position
 
-def get_publication(publication_uri):
+def get_publication(publication_uri, get_authors=True):
     """
     Given a URI, return an object that contains the publication it represents.
     We have to dereference the publication venue to get the journal name, and
-    the datetime value to get the date of publication.  We don't rebuild the
-    author list (too dang much work, perhaps the author list should just be
-    maintained as a property of the publication)
+    the datetime value to get the date of publication.
 
     The resulting object can be displayed using string_from_document
     """
@@ -1189,6 +1396,10 @@ def get_publication(publication_uri):
     triples = get_triples(publication_uri)
     publication['grants_cited'] = []
     publication['keyword_list'] = []
+    publication['concept_uris'] = []
+    publication['authorship_uris'] = []
+    publication['author_uris'] = []
+    publication['authors'] = []
     try:
         count = len(triples["results"]["bindings"])
     except:
@@ -1222,9 +1433,14 @@ def get_publication(publication_uri):
         if p == "http://vivoweb.org/ontology/core#freeTextKeyword":
             publication['keyword_list'].append(o)
         if p == "http://vivoweb.org/ontology/ufVivo#grantCited":
-            person['grants_cited'].append(o)
+            publication['grants_cited'].append(o)
+        if p == "http://vivoweb.org/ontology/core#hasSubjectArea":
+            publication['concept_uris'].append(o)
+        if p == \
+            "http://vivoweb.org/ontology/core#informationResourceInAuthorship":
+            publication['authorship_uris'].append(o)
         if p == "http://vivoweb.org/ontology/core#webPage":
-            person['web_page'] = o
+            publication['web_page'] = o
         if p == "http://purl.org/ontology/bibo/pageStart":
             publication['page_start'] = o
         if p == "http://purl.org/ontology/bibo/pageEnd":
@@ -1262,6 +1478,28 @@ def get_publication(publication_uri):
             except:
                 pass
         i = i + 1
+
+    # deref the authorships
+
+    if get_authors:
+        authors = {}
+        for authorship_uri in publication['authorship_uris']:
+            authorship = get_authorship(authorship_uri)
+            if 'author_uri' in authorship:
+
+                #   Add key value which is rank.  Then string_from_document
+                #   should show in rank order.  Voila!
+                
+                author_uri = authorship['author_uri']
+                if 'author_rank' in authorship:
+                    rank = authorship['author_rank']
+                    authors[rank] = {'first':get_vivo_value(author_uri,
+                        "foaf:firstName"), 'middle':get_vivo_value(author_uri,
+                        "vivo:middleName"), 'last':get_vivo_value(author_uri,
+                        "foaf:lastName")}
+                publication['author_uris'].append(author_uri)
+        publication['authors'] = authors
+
     return publication
 
 def get_datetime_value(datetime_value_uri):
@@ -1376,7 +1614,7 @@ def get_grant(grant_uri, get_investigators=False):
     while i < count:
         b = triples["results"]["bindings"][i]
         p = b['p']['value']
-        o = b['o']['value']
+        o = b['o']
         if p == "http://www.w3.org/2000/01/rdf-schema#label":
             grant['title'] = o
         if p == "http://vivoweb.org/ontology/core#totalAwardAmount":
@@ -1398,27 +1636,29 @@ def get_grant(grant_uri, get_investigators=False):
         if p == "http://vivo.ufl.edu/ontology/vivo-ufl/localAwardId":
             grant['local_award_id'] = o
         if p == "http://vivoweb.org/ontology/core#contributingRole":
-            grant['contributing_role_uris'].append(o)
+            grant['contributing_role_uris'].append(o['value'])
         
         # deref administered by
 
         if p == "http://vivoweb.org/ontology/core#administeredBy":
-            grant['administered_by_uri'] = o
-            administered_by = get_organization(o)
-            grant['administered_by'] = administered_by['label']
+            grant['administered_by_uri'] = o['value']
+            administered_by = get_organization(o['value'])
+            if 'label' in administered_by:
+                grant['administered_by'] = administered_by['label']
 
         # deref awarded by
 
         if p == "http://vivoweb.org/ontology/core#grantAwardedBy":
-            grant['sponsor_uri'] = o
-            awarded_by = get_organization(o)
-            grant['awarded_by'] = awarded_by['label']
+            grant['sponsor_uri'] = o['value']
+            awarded_by = get_organization(o['value'])
+            if 'label' in awarded_by:
+                grant['awarded_by'] = awarded_by['label']
 
         # deref the datetime interval
 
         if p == "http://vivoweb.org/ontology/core#dateTimeInterval":
-            grant['dti_uri'] = o
-            datetime_interval = get_datetime_interval(o)
+            grant['dti_uri'] = o['value']
+            datetime_interval = get_datetime_interval(o['value'])
             grant['datetime_interval'] = datetime_interval
             if 'start_date' in datetime_interval:
                 grant['start_date'] = datetime_interval['start_date']
@@ -1536,6 +1776,7 @@ def make_concept_rdf(label):
     """
     concept_template = tempita.Template("""
     <rdf:Description rdf:about="{{concept_uri}}">
+        <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Thing"/>
         <rdf:type rdf:resource="http://www.w3.org/2004/02/skos/core#Concept"/>
         <rdfs:label>{{label}}</rdfs:label>
     </rdf:Description>""")
@@ -1595,7 +1836,6 @@ def make_ufid_dictionary(debug=False):
     query = tempita.Template("""
     SELECT ?x ?ufid WHERE
     {
-    ?x rdf:type foaf:Person .
     ?x ufVivo:ufid ?ufid .
     }""")
     query = query.substitute()
@@ -1801,6 +2041,46 @@ def find_journal(issn, journal_dictionary):
         found = False
     return [found, uri]
 
+def make_date_dictionary(datetime_precision="vivo:yearMonthDayPrecision",
+                              debug=False):
+    """
+    Given a VIVO datetime precision, return a dictionary of the URI for each
+    date value.
+    """
+    date_dictionary = {}
+    query = tempita.Template("""
+    SELECT ?uri ?dt
+    WHERE {
+      ?uri vivo:dateTimePrecision {{datetime_precision}} .
+      ?uri vivo:dateTime ?dt .
+    }""")
+    query = query.substitute(datetime_precision=datetime_precision)
+    result = vivo_sparql_query(query)
+    try:
+        count = len(result["results"]["bindings"])
+    except:
+        count = 0
+    if debug:
+        print query, count, result["results"]["bindings"][0], \
+            result["results"]["bindings"][1]
+    #
+    i = 0
+    while i < count:
+        b = result["results"]["bindings"][i]
+        if datetime_precision == "vivo:yearPrecision":
+            dt = b['dt']['value'][0:4]
+            dtv = datetime.strptime(dt, '%Y')
+        elif datetime_precision == "vivo:yearMonthPrecision":
+            dt = b['dt']['value'][0:7]
+            dtv = datetime.strptime(dt, '%Y-%m')
+        elif datetime_precision == "vivo:yearMonthDayPrecision":
+            dt = b['dt']['value'][0:10]
+            dtv = datetime.strptime(dt, '%Y-%m-%d')
+        uri = b['uri']['value']
+        date_dictionary[dtv] = uri
+        i = i + 1
+    return date_dictionary
+
 def make_webpage_rdf(full_text_uri, \
     uri_type="http://vivo.ufl.edu/ontology/vivo-ufl/FullTextURL", \
     link_anchor_text="PubMed Central Full Text Link", rank="1", \
@@ -1813,6 +2093,7 @@ def make_webpage_rdf(full_text_uri, \
         return ["", None]
     full_text_url_rdf_template = tempita.Template("""
     <rdf:Description rdf:about="{{webpage_uri}}">
+        <rdf:type rdf:resource="http://www.w3.org/2002/07/owl#Thing"/>
         <rdf:type rdf:resource="http://vivoweb.org/ontology/core#URLLink"/>
         <rdf:type rdf:resource="{{uri_type}}"/>
         <vivo:linkURI>{{full_text_uri}}</vivo:linkURI>
@@ -1912,8 +2193,11 @@ def document_from_pubmed(record):
 
     d['volume'] = record['MedlineCitation']['Article']\
         ['Journal']['JournalIssue']['Volume']
-    d['issue'] = record['MedlineCitation']['Article']['Journal']\
-        ['JournalIssue']['Issue']
+    try:
+        d['issue'] = record['MedlineCitation']['Article']['Journal']\
+            ['JournalIssue']['Issue']
+    except:
+        pass
     d['issn'] = str(record['MedlineCitation']['Article']['Journal']['ISSN'])
 
     article_id_list = record['PubmedData']['ArticleIdList']
@@ -1963,13 +2247,18 @@ def string_from_document(doc):
         author_list = doc['authors']
         for key in sorted(author_list.keys()):
             value = author_list[key]
+            if 'last' not in value or value['last'] is None or \
+               value['last'] == "":
+                continue
             s = s + value['last']
-            if value['first'] == "":
+            if 'first' not in value or value['first'] is None or \
+               value['first'] == "":
                 s = s + ', '
                 continue
             else:
                 s = s + ', ' + value['first']
-            if value['middle'] == "":
+            if 'middle' not in value or value['middle'] is None or \
+               value['middle'] == "":
                 s = s + ', '
             else:
                 s = s + ' ' + value['middle'] + ', '
@@ -2002,37 +2291,45 @@ def make_harvest_datetime():
     dt = datetime.now()
     return dt.isoformat()
 
-def update_pubmed(pub_uri, doi=None):
+def update_pubmed(pub_uri, doi=None, pmid=None, inVivo=True):
     """
     Given the uri of a pub in VIVO and a module concept dictionary,
     update the PubMed attributes for the paper, and include RDF
     to add to the concept dictionary if necessary
     """
-
     ardf = ""
     srdf = ""
+    if inVivo:
 
     # Get the paper's attributes from VIVO
 
-    pub = get_publication(pub_uri)
-    if 'doi' not in pub and doi is None:
-        return ["", ""]
-    elif doi is None:
-        doi = pub['doi']
-    if 'pmid' not in pub:
-        pub['pmid'] = None
-    if 'pmcid' not in pub:
+        pub = get_publication(pub_uri)
+        if 'doi' not in pub and doi is None:
+            return ["", ""]
+        elif doi is None:
+            doi = pub['doi']
+        if 'pmid' not in pub:
+            pub['pmid'] = None
+        if 'pmcid' not in pub:
+            pub['pmcid'] = None
+        if 'nihmsid' not in pub:
+            pub['nihmsid'] = None
+        if 'abstract' not in pub:
+            pub['abstract'] = None
+
+    else:
+        pub = {}
+        pub['pmid'] = pmid
+        pub['doi'] = doi
+        pub['pub_uri'] = pub_uri
         pub['pmcid'] = None
-    if 'nihmsid' not in pub:
         pub['nihmsid'] = None
-    if 'abstract' not in pub:
         pub['abstract'] = None
 
     # Get the paper's attributes from PubMed
 
     try:
-        values = get_pubmed_values(doi)
-        pass
+        values = get_pubmed_values(doi, pmid)
     except:
         return {}
 
@@ -2232,7 +2529,7 @@ def get_vivo_uri(prefix="http://vivo.ufl.edu/individual/n"):
     return test_uri
 
 def vivo_sparql_query(query,
-    baseURL="http://sparql.vivo.ufl.edu:3030/VIVO/sparql",
+    baseURL="http://sparql.vivo.ufl.edu/VIVO/sparql",
     format="application/sparql-results+json", debug=False):
 
     """

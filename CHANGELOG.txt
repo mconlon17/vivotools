@@ -1,0 +1,83 @@
+VIVO Tools Change log
+    
+    1.1     2013-03-02 MC
+            Added assert_data_property to generate RDF for asserting that an
+            entity have a named data property value
+            Added update_data property to generate addtion and subtraction RDF
+            based on five case logic to update a VIVO data property value with
+            a source data property value
+            Added hr_abbrev_to_words to fix position and working titles
+    1.2     2013-06-11 MC
+            Add get_position to return a position object from a position uri
+            Add position capability to get_person
+            Add repair_phone_number to return IT standard phone numbers
+    1.3     2013-07-23 MC
+            Fixed make_datetime_rdf to provide datetime string values with
+            zeroed time components for datetime precision asserted as
+            yearMonthDay
+    1.4     2013-08-07 MC
+            Changed delimiter in read_csv to "|" was "!"
+    1.41    2013-08-11 MC
+            support missing grant start and end dates
+    1.42    2013-08-22 MC
+            added Skip=True to read.csv to skip rows without the number of
+            values in the header.  skip=False will throw an exception on
+            first such occurance
+    1.43    2013-09-02 MC
+            get_person now returns preferred_title.
+            get_person now returns person['home_dept_uri'] if exists
+    1.44    2013-09-04 MC
+            Added version variable
+    1.45    2013-09-17 MC
+            Added debug parameter to vivo_sparql_query to show baseURL and query
+    1.46    2013-11-29 MC
+            Remove print statements from update_data_property and
+            update_resource_property
+            Added get_references to return references to a URI
+            Added remove_uri to remove all triples citing the URI
+            Added get_webpage to return a webpage object from a webpage uri
+            Enhancements to get_publication to return pubmed values
+            Removed function _values_from_vivo.  Use get_publication
+            Renamed get_pubmed_values_from_pubmed to simply
+            get_pubmed_values
+    1.47    2013-12-10 MC
+            Added additional ttributes to get_pubmed and get_publication
+    1.48    2013-12-14 MC
+            Add retry code to get_pubmed to handle Entrez non-response
+    1.49    2014-01-02 MC
+            Numerous upgrades to get functions to support biosketches
+    1.50    2014-01-11 MC
+            Replace all tests for None with is None and is not None
+            VIVO URI always appear in rdf:resource assertions
+    1.51    2014-03-25 MC
+            find_vivo_uri will return a single URI having the predicate and
+            value. Useful for finding uri from other identifier such as uri
+            ufid
+    1.52    2014-03-28 MC
+            Add lang and datatype support to assert_data_property.  New
+            function get_value returns lang and datatype. Add newline to
+            rdf_header.  Add xml declaration to rdf_header.  Add newline to
+            rdf_footer.  Add dict support to update_data_property
+    1.53    2014-03-29 MC  
+            Add lang and datatype support to get_grant
+    1.54    2014-04-06 MC
+            Add unicode support for UTF-8 to read_csv
+    1.55    2014-05-04 MC
+            Restore escape to update data_property
+    1.56    2014-05-05 MC
+            merge_uri to create add and sub rdf for merging to uris.
+            remove_uri updated to handle xml lang and datatype
+            translate_predicate added to support remove_uri and merge_uri
+    1.57    2014-05-19 MC
+            Patch get_publication to handle authorship with no author rank
+            Add make_date_dictionary
+    1.58    2014-06-03 MC
+            Improvements in document_from_pubmed to handle missing data in
+            Entrez. Add untag_predicate. Adjust new line in
+            assert_resource_property to match new line usage
+            assert_data_property. New parameters in update_pubmed to support
+            adding pubmed attributes to papers not yet in VIVO. New
+            parameters added to get_pubmed_values to support getting values
+            from either doi or pmid
+    1.59    2014-06-21 MC
+            get_types returns a list of types for a specified URI
