@@ -40,8 +40,6 @@ domain level (person, grant, pub, org, course, role)
 1. Increased emphasis on output functions for visualization and reporting
 1. Isolation of UF specific features and dependencies
 
-### Version 3.0
+### Future Work
 
-VIVO Tools will move toward an object-oriented representation of domain
-entities.  We expect to collaborate with other emerging VIVO apps and tools
-projects to provide useful functionality for others.
+VIVO Tools code is finding its way into the VIVO Pump and other projects.
